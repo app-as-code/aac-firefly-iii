@@ -1,0 +1,221 @@
+service:
+  name: aac-firefly-iii
+  image_repo: fireflyiii/core
+  friendly_name: Finanzen
+  image_tag: version-5.5.13
+  description: A free and open source personal finance manager.
+  icon: firefly-iii.png
+  category: Finanzen - Dokumente - Organisation
+  stage: prod
+  hostname: finance
+ports:
+- name: web
+  port: 8080
+  external_port: 28765
+  protocol: TCP
+- name: importer
+  port: 8080
+  external_port: 28766
+  protocol: TCP
+config:
+  domain_name: example.com
+  generate_hostname: false
+  integrations:
+    homepage:
+      enabled: true
+    autodns:
+      enabled: true
+      create_wildcard: true
+    traefik:
+      enabled: true
+      cert_resolver: ionos
+      entrypoint: websecure
+  schema_version: 2
+stage_overrides:
+  prod:
+    service:
+      hostname: finance
+    config:
+      generate_hostname: false
+secrets:
+  APP_KEY: CHANGE_ME
+  DB_PASSWORD: CHANGE_ME
+  MAIL_PASSWORD: CHANGE_ME
+  STATIC_CRON_TOKEN: CHANGE_ME
+  MARIADB_DATABASE: firefly
+  MARIADB_USER: firefly
+  MARIADB_PASSWORD: CHANGE_ME
+  MARIADB_ROOT_PASSWORD: CHANGE_ME
+volumes:
+  configs:
+    description: Configuration and upload storage for Firefly III
+  db_data:
+    description: Data for database
+  redis_data:
+    description: Data for redis
+  importer_upload:
+    description: Data for importer
+deployment_strategy:
+  main:
+    enabled: true
+    target_stage: prod
+  dev:
+    enabled: true
+    target_stage: dev
+  test:
+    enabled: false
+    target_stage: test
+  ansible-dev:
+    enabled: true
+    target_stage: dev
+  iac-dev:
+    enabled: true
+    target_stage: dev
+  template-dev:
+    enabled: true
+    target_stage: dev
+deployments:
+  docker_compose:
+    restart_policy: always
+    host_base_path: /export/docker
+    volumes:
+    - configs:/var/www/html/storage/upload
+    environment:
+      APP_LOG_LEVEL: '{{ vars.APP_LOG_LEVEL }}'
+      MAIL_MAILER: '{{ vars.MAIL_MAILER }}'
+      SITE_OWNER: '{{ vars.SITE_OWNER }}'
+      ALLOW_WEBHOOKS: '{{ vars.ALLOW_WEBHOOKS }}'
+      APP_URL: '{{ vars.APP_URL }}'
+      DB_DATABASE: '{{ vars.DB_DATABASE }}'
+      MAIL_HOST: '{{ vars.MAIL_HOST }}'
+      PUID: '{{ vars.PUID }}'
+      DEFAULT_LOCALE: '{{ vars.DEFAULT_LOCALE }}'
+      MAIL_ENCRYPTION: '{{ vars.MAIL_ENCRYPTION }}'
+      CACHE_DRIVER: '{{ vars.CACHE_DRIVER }}'
+      DB_PORT: '{{ vars.DB_PORT }}'
+      DEFAULT_LANGUAGE: '{{ vars.DEFAULT_LANGUAGE }}'
+      MAIL_PORT: '{{ vars.MAIL_PORT }}'
+      DB_HOST: '{{ vars.DB_HOST }}'
+      MAIL_FROM: '{{ vars.MAIL_FROM }}'
+      DB_USERNAME: '{{ vars.DB_USERNAME }}'
+      PGID: '{{ vars.PGID }}'
+      LOG_CHANNEL: '{{ vars.LOG_CHANNEL }}'
+      DB_CONNECTION: '{{ vars.DB_CONNECTION }}'
+      SESSION_DRIVER: '{{ vars.SESSION_DRIVER }}'
+      APP_ENV: '{{ vars.APP_ENV }}'
+      MAIL_USERNAME: '{{ vars.MAIL_USERNAME }}'
+      TZ: '{{ vars.TZ }}'
+      APP_DEBUG: '{{ vars.APP_DEBUG }}'
+      TRUSTED_PROXIES: '{{ vars.TRUSTED_PROXIES }}'
+      REDIS_HOST: '{{ vars.REDIS_HOST }}'
+      REDIS_PORT: '{{ vars.REDIS_PORT }}'
+      FIREFLY_III_URL: '{{ vars.FIREFLY_III_URL }}'
+      VANITY_URL: '{{ vars.VANITY_URL }}'
+      LOG_LEVEL: '{{ vars.LOG_LEVEL }}'
+      VERIFY_TLS_SECURITY: '{{ vars.VERIFY_TLS_SECURITY }}'
+      FIREFLY_III_CLIENT_ID: '{{ vars.FIREFLY_III_CLIENT_ID }}'
+      APP_KEY: '{{ secrets.APP_KEY }}'
+      DB_PASSWORD: '{{ secrets.DB_PASSWORD }}'
+      MAIL_PASSWORD: '{{ secrets.MAIL_PASSWORD }}'
+      STATIC_CRON_TOKEN: '{{ secrets.STATIC_CRON_TOKEN }}'
+      MARIADB_DATABASE: '{{ secrets.MARIADB_DATABASE }}'
+      MARIADB_USER: '{{ secrets.MARIADB_USER }}'
+      MARIADB_PASSWORD: '{{ secrets.MARIADB_PASSWORD }}'
+      MARIADB_ROOT_PASSWORD: '{{ secrets.MARIADB_ROOT_PASSWORD }}'
+dependencies:
+  database:
+    import: catalog/mariadb.yml
+    overrides:
+      name: aac-firefly-db
+      image_tag: 12.3.1-ubi10-rc
+      volumes:
+        db_data:
+          target: /var/lib/mysql
+          description: Persistent storage for db_data
+      environment:
+        PUID: '{{ vars.PUID }}'
+        PGID: '{{ vars.PGID }}'
+        TZ: '{{ vars.TZ }}'
+  redis:
+    import: catalog/redis.yml
+    overrides:
+      name: aac-firefly-redis
+      image_tag: 8.6.1
+      volumes:
+        redis_data:
+          target: /data
+          description: Persistent storage for redis_data
+      environment:
+        PUID: '{{ vars.PUID }}'
+        PGID: '{{ vars.PGID }}'
+        TZ: '{{ vars.TZ }}'
+  importer:
+    name: aac-firefly-importer
+    image_repo: fireflyiii/data-importer
+    image_tag: version-0.9.12
+    restart_policy: always
+    volumes:
+      importer_upload:
+        target: /var/www/html/storage/upload
+        description: Persistent storage for importer_upload
+    environment:
+      FIREFLY_III_URL: http://{{ service.name | lower }}:8080
+      VANITY_URL: https://{{ service.hostname }}.{{ config.domain_name }}
+      TZ: Europe/Berlin
+      TRUSTED_PROXIES: '**'
+      APP_DEBUG: 'false'
+      LOG_LEVEL: debug
+      VERIFY_TLS_SECURITY: 'false'
+      FIREFLY_III_CLIENT_ID: '{{ vars.FIREFLY_III_CLIENT_ID }}'
+      REDIS_HOST: '{{ dependencies.redis.overrides.name }}'
+      REDIS_PORT: '6379'
+      PUID: '{{ vars.PUID }}'
+      PGID: '{{ vars.PGID }}'
+  cron:
+    name: aac-firefly-cron
+    image_repo: alpine
+    image_tag: 3.24.3
+    restart_policy: always
+    command:
+    - sh
+    - -c
+    - echo "0 3 * * * wget -qO- http://{{ service.name | lower }}:8080/api/v1/cron/{{
+      secrets.STATIC_CRON_TOKEN }}" | crontab - && crond -f -L /dev/stdout
+    environment:
+      PUID: '{{ vars.PUID }}'
+      PGID: '{{ vars.PGID }}'
+      TZ: '{{ vars.TZ }}'
+vars:
+  APP_LOG_LEVEL: notice
+  MAIL_MAILER: log
+  SITE_OWNER: CHANGE_ME
+  ALLOW_WEBHOOKS: 'true'
+  APP_URL: https://finance.example.com
+  DB_DATABASE: firefly
+  MAIL_HOST: finance.example.com
+  PUID: '1000'
+  DEFAULT_LOCALE: equal
+  MAIL_ENCRYPTION: SSL
+  CACHE_DRIVER: redis
+  DB_PORT: '3306'
+  DEFAULT_LANGUAGE: de_DE
+  MAIL_PORT: '465'
+  DB_HOST: finance.example.com
+  MAIL_FROM: CHANGE_ME
+  DB_USERNAME: firefly
+  PGID: '1000'
+  LOG_CHANNEL: stack
+  DB_CONNECTION: mysql
+  SESSION_DRIVER: redis
+  APP_ENV: local
+  MAIL_USERNAME: CHANGE_ME
+  TZ: Europe/Berlin
+  APP_DEBUG: 'false'
+  TRUSTED_PROXIES: '**'
+  REDIS_HOST: finance.example.com
+  REDIS_PORT: '6379'
+  FIREFLY_III_URL: https://finance.example.com
+  VANITY_URL: https://finance.example.com
+  LOG_LEVEL: debug
+  VERIFY_TLS_SECURITY: 'false'
+  FIREFLY_III_CLIENT_ID: CHANGE_ME

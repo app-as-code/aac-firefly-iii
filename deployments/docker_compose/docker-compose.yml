@@ -1,0 +1,227 @@
+services:
+  # --- Main Application Service ---
+  aac-firefly-iii:
+    image: "fireflyiii/core:version-5.5.13"
+    container_name: "aac-firefly-iii"
+    hostname: "finance"
+    restart: "always"
+
+
+    environment:
+      APP_LOG_LEVEL: "notice"
+      MAIL_MAILER: "log"
+      SITE_OWNER: "${SITE_OWNER:?set SITE_OWNER in .env (see .env.example)}"
+      ALLOW_WEBHOOKS: "true"
+      APP_URL: "https://finance.example.com"
+      DB_DATABASE: "firefly"
+      MAIL_HOST: "finance.example.com"
+      PUID: "1000"
+      DEFAULT_LOCALE: "equal"
+      MAIL_ENCRYPTION: "SSL"
+      CACHE_DRIVER: "redis"
+      DB_PORT: "3306"
+      DEFAULT_LANGUAGE: "de_DE"
+      MAIL_PORT: "465"
+      DB_HOST: "finance.example.com"
+      MAIL_FROM: "${MAIL_FROM:?set MAIL_FROM in .env (see .env.example)}"
+      DB_USERNAME: "firefly"
+      PGID: "1000"
+      LOG_CHANNEL: "stack"
+      DB_CONNECTION: "mysql"
+      SESSION_DRIVER: "redis"
+      APP_ENV: "local"
+      MAIL_USERNAME: "${MAIL_USERNAME:?set MAIL_USERNAME in .env (see .env.example)}"
+      TZ: "Europe/Berlin"
+      APP_DEBUG: "false"
+      TRUSTED_PROXIES: "**"
+      REDIS_HOST: "finance.example.com"
+      REDIS_PORT: "6379"
+      FIREFLY_III_URL: "https://finance.example.com"
+      VANITY_URL: "https://finance.example.com"
+      LOG_LEVEL: "debug"
+      VERIFY_TLS_SECURITY: "false"
+      FIREFLY_III_CLIENT_ID: "${FIREFLY_III_CLIENT_ID:?set FIREFLY_III_CLIENT_ID in .env (see .env.example)}"
+      APP_KEY: "${APP_KEY:?set APP_KEY in .env (see .env.example)}"
+      DB_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env (see .env.example)}"
+      MAIL_PASSWORD: "${MAIL_PASSWORD:?set MAIL_PASSWORD in .env (see .env.example)}"
+      STATIC_CRON_TOKEN: "${STATIC_CRON_TOKEN:?set STATIC_CRON_TOKEN in .env (see .env.example)}"
+      MARIADB_DATABASE: "firefly"
+      MARIADB_USER: "firefly"
+      MARIADB_PASSWORD: "${MARIADB_PASSWORD:?set MARIADB_PASSWORD in .env (see .env.example)}"
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD:?set MARIADB_ROOT_PASSWORD in .env (see .env.example)}"
+    ports:
+      - "28765:8080/tcp"
+      - "28766:8080/tcp"
+
+    volumes:
+      - "/export/docker/aac-firefly-iii/configs:/var/www/html/storage/upload"
+
+    networks:
+      - exposed
+      - interconnect
+      - secured
+      - stack_internal
+
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.aac-firefly-iii.rule: "Host(`finance.example.com`)"
+      traefik.http.routers.aac-firefly-iii.entrypoints: "websecure"
+      traefik.http.routers.aac-firefly-iii.tls: "true"
+      traefik.http.routers.aac-firefly-iii.tls.certresolver: "ionos"
+      traefik.docker.network: "services-secured"
+      traefik.http.services.aac-firefly-iii.loadbalancer.server.port: "8080"
+      traefik.http.services.aac-firefly-iii.loadbalancer.server.scheme: "http"
+      auto-dns.createWildcard.aac-firefly-iii: "true"
+      auto-dns.customDNS.aac-firefly-iii: "true"
+      auto-dns.customDOMAIN.aac-firefly-iii: "example.com"
+      auto-dns.customHost.aac-firefly-iii: "finance"
+      homepage.group: "Finanzen - Dokumente - Organisation"
+      homepage.name: "Finanzen"
+      homepage.href: "https://finance.example.com"
+      homepage.icon: "firefly-iii.png"
+      homepage.description: "A free and open source personal finance manager."
+
+
+    depends_on:
+      aac-firefly-db:
+        condition: service_healthy
+      aac-firefly-redis:
+        condition: service_healthy
+      aac-firefly-importer:
+        condition: service_started
+      aac-firefly-cron:
+        condition: service_started
+
+
+  # --- Service Dependencies (Sidecars) ---
+  aac-firefly-db:
+    image: "mariadb:12.3.1-ubi10-rc"
+    container_name: "aac-firefly-db"
+    restart: "always"
+    
+
+    env_file:
+      - .env
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "Europe/Berlin"
+
+
+    volumes:
+      - "/export/docker/aac-firefly-iii/db:/var/lib/mysql"
+      - "/export/docker/aac-firefly-iii/db_data:/var/lib/mysql"
+
+    networks:
+      - stack_internal
+
+
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost --silent || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+
+  aac-firefly-redis:
+    image: "redis:8.6.1"
+    container_name: "aac-firefly-redis"
+    restart: "always"
+    
+
+    env_file:
+      - .env
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "Europe/Berlin"
+
+
+    volumes:
+      - "/export/docker/aac-firefly-iii/redis-data:/data"
+      - "/export/docker/aac-firefly-iii/redis_data:/data"
+
+    networks:
+      - stack_internal
+
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+
+  aac-firefly-importer:
+    image: "fireflyiii/data-importer:version-0.9.12"
+    container_name: "aac-firefly-importer"
+    restart: "always"
+    
+
+    env_file:
+      - .env
+    environment:
+      FIREFLY_III_URL: "http://aac-firefly-iii:8080"
+      VANITY_URL: "https://finance.example.com"
+      TZ: "Europe/Berlin"
+      TRUSTED_PROXIES: "**"
+      APP_DEBUG: "false"
+      LOG_LEVEL: "debug"
+      VERIFY_TLS_SECURITY: "false"
+      FIREFLY_III_CLIENT_ID: "${FIREFLY_III_CLIENT_ID:?set FIREFLY_III_CLIENT_ID in .env (see .env.example)}"
+      REDIS_HOST: "aac-firefly-redis"
+      REDIS_PORT: "6379"
+      PUID: "1000"
+      PGID: "1000"
+
+
+    volumes:
+      - "/export/docker/aac-firefly-iii/importer_upload:/var/www/html/storage/upload"
+
+    networks:
+      - stack_internal
+
+
+
+
+  aac-firefly-cron:
+    image: "alpine:3.24.3"
+    container_name: "aac-firefly-cron"
+    restart: "always"
+    
+    command:
+      - "sh"
+      - "-c"
+      - "echo \"0 3 * * * wget -qO- http://aac-firefly-iii:8080/api/v1/cron/CHANGE_ME\" | crontab - \u0026\u0026 crond -f -L /dev/stdout"
+
+    env_file:
+      - .env
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "Europe/Berlin"
+
+
+
+    networks:
+      - stack_internal
+
+
+
+
+
+networks:
+  secured:
+    name: "services-secured"
+    external: true
+  exposed:
+    name: "services-exposed"
+    external: true
+  interconnect:
+    name: "docker-default"
+    external: true
+  stack_internal:
+    name: "aac-firefly-iii_stack_internal"
+    driver: "bridge"
+
